@@ -52,7 +52,7 @@ func(nl *NetLists) CheckIpInList(ipStr string) (bool, error)  {
 	return false, ErrNotFound
 }
 
-//AddSubnetToList add given subnet addres into "white" or "black" list.
+//AddSubnetToList add given subnet address into "white" or "black" list.
 //If subnet already exist in one of lists, return error, else nil.
 func(nl *NetLists) AddSubnetToList(netStr string, list string) error {
 
@@ -81,8 +81,8 @@ func(nl *NetLists) AddSubnetToList(netStr string, list string) error {
 	return nil
 }
 
-//RemoveSubnetFromList remove given subnet addres from "white" or "black" list.
-//If don't exist in selected list, return error, else nil.
+//RemoveSubnetFromList remove given subnet address from "white" or "black" list.
+//If subnet don't exist in selected list, return error, else nil.
 func(nl *NetLists) RemoveSubnetFromList(netStr string, list string) error {
 	_, _, err := net.ParseCIDR(netStr)
 	if err != nil {
