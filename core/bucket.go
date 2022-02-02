@@ -125,3 +125,41 @@ func Limit(params RequestParams) (bool, error) {
 
 	return true, nil
 }
+
+func ResetBuckets(params RequestParams)  {
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if _, ok := logins[params.Login]; ok {
+		delete(logins, params.Login)
+	}
+	if _, ok := IPs[params.IPaddr]; ok {
+		delete(IPs, params.IPaddr)
+	}
+
+}
+
+func cleanupBuckets() {
+	for {
+		time.Sleep(time.Minute)
+
+		mu.Lock()
+		for log, v := range logins {
+			if time.Since(v.lastUsage) > 3*time.Minute {
+				delete(logins, log)
+			}
+		}
+		for pass, v := range passes {
+			if time.Since(v.lastUsage) > 3*time.Minute {
+				delete(passes, pass)
+			}
+		}
+		for ip, v := range IPs {
+			if time.Since(v.lastUsage) > 3*time.Minute {
+				delete(IPs, ip)
+			}
+		}
+		mu.Unlock()
+	}
+}
