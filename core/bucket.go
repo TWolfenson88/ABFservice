@@ -1,34 +1,30 @@
 package core
 
 import (
-	"fmt"
-	"io/ioutil"
-	"log"
-	"net"
-	"net/http"
+	"errors"
 	"golang.org/x/time/rate"
 	"sync"
 	"time"
 )
 
 type BucketConfig struct {
-	LogLimit int
+	LogLimit  int
 	PassLimit int
-	IPLimit int
+	IPLimit   int
 }
 
 type Login struct {
-	limiter *rate.Limiter
+	limiter   *rate.Limiter
 	lastUsage time.Time
 }
 
 type Password struct {
-	limiter *rate.Limiter
+	limiter   *rate.Limiter
 	lastUsage time.Time
 }
 
 type IP struct {
-	limiter *rate.Limiter
+	limiter   *rate.Limiter
 	lastUsage time.Time
 }
 
@@ -37,7 +33,7 @@ var passes = make(map[string]*Password)
 var IPs = make(map[string]*IP)
 var mu sync.Mutex
 
-func(bc *BucketConfig) getLogin(login string) *rate.Limiter {
+func (bc *BucketConfig) getLogin(login string) *rate.Limiter {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -52,7 +48,7 @@ func(bc *BucketConfig) getLogin(login string) *rate.Limiter {
 	return v.limiter
 }
 
-func(bc *BucketConfig) getPass(pass string) *rate.Limiter {
+func (bc *BucketConfig) getPass(pass string) *rate.Limiter {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -67,7 +63,7 @@ func(bc *BucketConfig) getPass(pass string) *rate.Limiter {
 	return v.limiter
 }
 
-func(bc *BucketConfig) getIP(ip string) *rate.Limiter {
+func (bc *BucketConfig) getIP(ip string) *rate.Limiter {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -82,48 +78,50 @@ func(bc *BucketConfig) getIP(ip string) *rate.Limiter {
 	return v.limiter
 }
 
-func(bc *BucketConfig) LoginBucket(login string) bool {
+func (bc *BucketConfig) LoginBucket(login string) bool {
 	limiter := bc.getLogin(login)
 
 	return limiter.Allow()
 }
 
-func(bc *BucketConfig) PassBucket(pass string) bool {
+func (bc *BucketConfig) PassBucket(pass string) bool {
 	limiter := bc.getPass(pass)
 
 	return limiter.Allow()
 }
 
-func(bc *BucketConfig) IPBucket(ip string) bool {
+func (bc *BucketConfig) IPBucket(ip string) bool {
 	limiter := bc.getIP(ip)
 
 	return limiter.Allow()
 }
 
-func Limit(w http.ResponseWriter, r *http.Request) {
+type RequestParams struct {
+	Login    string
+	Password string
+	IPaddr   string
+}
 
-		//HERE we should check in white and black list and if not found
+func Limit(params RequestParams) (bool, error) {
 
-	body, _ := ioutil.ReadAll(r.Body)
-
-	fmt.Println("ALERT: ", r.RemoteAddr, string(body))
-
-		// Get the IP address for the current user.
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		fmt.Println("IP ADDR", ip)
-		if err != nil {
-			log.Println(err.Error())
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		// Call the getVisitor function to retreive the rate limiter for
-		// the current user.
-		//limiter := getVisitor(ip)
-		//if limiter.Allow() == false {
-		//	http.Error(w, http.StatusText(429), http.StatusTooManyRequests)
-		//	return
-		//}
-
-		w.Write([]byte("OK"))
+	//TODO: TEMP SHIT, REMOVE BEFORE FLIGHT
+	bc := BucketConfig{
+		LogLimit:  10,
+		PassLimit: 100,
+		IPLimit:   1000,
 	}
+
+	//TODO:NEED TO CHECK W/B LISTS
+
+	if !bc.LoginBucket(params.Login) {
+		return false, errors.New("too much tries for login")
+	}
+	if !bc.PassBucket(params.Login) {
+		return false, errors.New("too much tries for pass")
+	}
+	if !bc.IPBucket(params.Login) {
+		return false, errors.New("too much tries for ip")
+	}
+
+	return true, nil
+}
