@@ -28,19 +28,41 @@ type IP struct {
 	lastUsage time.Time
 }
 
-var logins = make(map[string]*Login)
-var passes = make(map[string]*Password)
-var IPs = make(map[string]*IP)
-var mu sync.Mutex
+//var logins = make(map[string]*Login)
+//var passes = make(map[string]*Password)
+//var IPs = make(map[string]*IP)
+//var mu sync.Mutex
 
-func (bc *BucketConfig) getLogin(login string) *rate.Limiter {
-	mu.Lock()
-	defer mu.Unlock()
+type BucketStorage struct {
+		Logins map[string]*Login
+		Passes map[string]*Password
+		IPs    map[string]*IP
+		mu     sync.Mutex
+	}
 
-	v, ok := logins[login]
+func (bs *BucketStorage) GetLogin(login string, n int) *rate.Limiter {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+
+		v, ok := bs.Logins[login]
+		if !ok {
+			limiter := rate.NewLimiter(rate.Limit(n/60), n)
+			bs.Logins[login] = &Login{limiter, time.Now()}
+			return limiter
+		}
+
+		v.lastUsage = time.Now()
+		return v.limiter
+}
+
+func (bs *BucketStorage) GetPass(pass string, m int) *rate.Limiter {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
+
+	v, ok := bs.Passes[pass]
 	if !ok {
-		limiter := rate.NewLimiter(rate.Limit(bc.LogLimit/60), bc.LogLimit)
-		logins[login] = &Login{limiter, time.Now()}
+		limiter := rate.NewLimiter(rate.Limit(m/60), m)
+		bs.Passes[pass] = &Password{limiter, time.Now()}
 		return limiter
 	}
 
@@ -48,14 +70,14 @@ func (bc *BucketConfig) getLogin(login string) *rate.Limiter {
 	return v.limiter
 }
 
-func (bc *BucketConfig) getPass(pass string) *rate.Limiter {
-	mu.Lock()
-	defer mu.Unlock()
+func (bs *BucketStorage) GetIP(ip string, k int) *rate.Limiter {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
 
-	v, ok := passes[pass]
+	v, ok := bs.IPs[ip]
 	if !ok {
-		limiter := rate.NewLimiter(rate.Limit(bc.PassLimit/60), bc.PassLimit)
-		passes[pass] = &Password{limiter, time.Now()}
+		limiter := rate.NewLimiter(rate.Limit(k/60), k)
+		bs.IPs[ip] = &IP{limiter, time.Now()}
 		return limiter
 	}
 
@@ -63,35 +85,20 @@ func (bc *BucketConfig) getPass(pass string) *rate.Limiter {
 	return v.limiter
 }
 
-func (bc *BucketConfig) getIP(ip string) *rate.Limiter {
-	mu.Lock()
-	defer mu.Unlock()
-
-	v, ok := IPs[ip]
-	if !ok {
-		limiter := rate.NewLimiter(rate.Limit(bc.IPLimit/60), bc.IPLimit)
-		IPs[ip] = &IP{limiter, time.Now()}
-		return limiter
-	}
-
-	v.lastUsage = time.Now()
-	return v.limiter
-}
-
-func (bc *BucketConfig) LoginBucket(login string) bool {
-	limiter := bc.getLogin(login)
+func (bs *BucketStorage) LoginBucket(login string, n int) bool {
+	limiter := bs.GetLogin(login, n)
 
 	return limiter.Allow()
 }
 
-func (bc *BucketConfig) PassBucket(pass string) bool {
-	limiter := bc.getPass(pass)
+func (bs *BucketStorage) PassBucket(pass string, m int) bool {
+	limiter := bs.GetPass(pass, m)
 
 	return limiter.Allow()
 }
 
-func (bc *BucketConfig) IPBucket(ip string) bool {
-	limiter := bc.getIP(ip)
+func (bs *BucketStorage) IPBucket(ip string, k int) bool {
+	limiter := bs.GetIP(ip, k)
 
 	return limiter.Allow()
 }
@@ -102,64 +109,56 @@ type RequestParams struct {
 	IPaddr   string
 }
 
-func Limit(params RequestParams) (bool, error) {
-
-	//TODO: TEMP SHIT, REMOVE BEFORE FLIGHT
-	bc := BucketConfig{
-		LogLimit:  10,
-		PassLimit: 100,
-		IPLimit:   1000,
-	}
+func(bs *BucketStorage) Limit(params RequestParams, bc BucketConfig) (bool, error) {
 
 	//TODO:NEED TO CHECK W/B LISTS
 
-	if !bc.LoginBucket(params.Login) {
+	if !bs.LoginBucket(params.Login, bc.LogLimit) {
 		return false, errors.New("too much tries for login")
 	}
-	if !bc.PassBucket(params.Login) {
+	if !bs.PassBucket(params.Login, bc.PassLimit) {
 		return false, errors.New("too much tries for pass")
 	}
-	if !bc.IPBucket(params.Login) {
+	if !bs.IPBucket(params.Login, bc.IPLimit) {
 		return false, errors.New("too much tries for ip")
 	}
 
 	return true, nil
 }
 
-func ResetBuckets(params RequestParams)  {
+func(bs *BucketStorage) ResetBuckets(params RequestParams) {
+	bs.mu.Lock()
+	defer bs.mu.Unlock()
 
-	mu.Lock()
-	defer mu.Unlock()
-
-	if _, ok := logins[params.Login]; ok {
-		delete(logins, params.Login)
+	if _, ok := bs.Logins[params.Login]; ok {
+		delete(bs.Logins, params.Login)
 	}
-	if _, ok := IPs[params.IPaddr]; ok {
-		delete(IPs, params.IPaddr)
+	if _, ok := bs.IPs[params.IPaddr]; ok {
+		delete(bs.IPs, params.IPaddr)
 	}
 
 }
 
-func cleanupBuckets() {
+func(bs *BucketStorage) CleanupBuckets() {
 	for {
 		time.Sleep(time.Minute)
 
-		mu.Lock()
-		for log, v := range logins {
+		bs.mu.Lock()
+		for log, v := range bs.Logins {
 			if time.Since(v.lastUsage) > 3*time.Minute {
-				delete(logins, log)
+				delete(bs.Logins, log)
 			}
 		}
-		for pass, v := range passes {
+		for pass, v := range bs.Passes {
 			if time.Since(v.lastUsage) > 3*time.Minute {
-				delete(passes, pass)
+				delete(bs.Passes, pass)
 			}
 		}
-		for ip, v := range IPs {
+		for ip, v := range bs.IPs {
 			if time.Since(v.lastUsage) > 3*time.Minute {
-				delete(IPs, ip)
+				delete(bs.IPs, ip)
 			}
 		}
-		mu.Unlock()
+		bs.mu.Unlock()
 	}
 }
