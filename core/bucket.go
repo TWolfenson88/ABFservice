@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	wbl "github.com/TWolfenson88/ABFservice/core/wblists"
 	"golang.org/x/time/rate"
 	"sync"
 	"time"
@@ -27,11 +28,6 @@ type IP struct {
 	limiter   *rate.Limiter
 	lastUsage time.Time
 }
-
-//var logins = make(map[string]*Login)
-//var passes = make(map[string]*Password)
-//var IPs = make(map[string]*IP)
-//var mu sync.Mutex
 
 type BucketStorage struct {
 		Logins map[string]*Login
@@ -109,9 +105,14 @@ type RequestParams struct {
 	IPaddr   string
 }
 
-func(bs *BucketStorage) Limit(params RequestParams, bc BucketConfig) (bool, error) {
+func(bs *BucketStorage) Limit(params RequestParams, bc BucketConfig, nl wbl.NetLists) (bool, error) {
 
-	//TODO:NEED TO CHECK W/B LISTS
+	result, err := nl.CheckIpInList(params.IPaddr)
+	if err == nil {
+		return result, nil
+	}else if !result && err != wbl.ErrNotFound {
+		return false,err
+	}
 
 	if !bs.LoginBucket(params.Login, bc.LogLimit) {
 		return false, errors.New("too much tries for login")
