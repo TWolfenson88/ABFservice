@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package chat;
 
-option go_package = "./api;api";
+option go_package = ".;api";
 
 message UserData {
   string ip = 1;
@@ -15,20 +15,20 @@ message AllowUser {
 }
 
 message StatusMsg {
-  string status = 1;
+  string error = 1;
 }
 
 message IpData {
   string IpAddr = 1;
+  string List = 2;
 }
 
 service ABFService{
   rpc AuthRequest(UserData) returns(AllowUser){}
   rpc ResetBucket(UserData) returns(StatusMsg){}
-  rpc AddWhiteList(IpData) returns(StatusMsg){}
-  rpc RemoveWhiteList(IpData) returns(StatusMsg){}
-  rpc AddBlackList(IpData) returns(StatusMsg){}
+  rpc AddToList(IpData) returns(StatusMsg){}
+  rpc RemoveFromList(IpData) returns(StatusMsg){}
 
 }
 
-//protoc --go_out=plugins=grpc:chat test.proto
+//protoc --go_out=plugins=grpc:api/grpc api/api.proto -I .

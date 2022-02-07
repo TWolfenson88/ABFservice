@@ -24,7 +24,7 @@ func main() {
 	fmt.Println("Hello test")
 
 	//заинитить необходимые структуры
-	
+
 	ABFcfg := InitABF()
 
 
